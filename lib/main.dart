@@ -157,34 +157,42 @@ class _VoiceAssistantUIState extends State<VoiceAssistantUI> {
   }
 
   void _startListening() async {
-    setState(() {
-      _emoExpression = 'neutral';
-    });
-    bool available = await _speech.initialize(
-      onStatus: (status) => print('onStatus: $status'),
-      onError: (error) => _handleSpeechError(error),
-    );
-    if (available) {
-      setState(() => _isListening = true);
-      _speech.listen(
-        onResult: (result) {
-          if (result.finalResult) {
-            if (result.recognizedWords.isEmpty) {
-              _sayRandomDialogue();
-            } else {
-              _sendQuestion(result.recognizedWords);
-            }
-            setState(() => _isListening = false);
-          }
-        },
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 5),
-        onSoundLevelChange: (level) => print('Sound level: $level'),
-        cancelOnError: true,
-        partialResults: false,
+    if(widget.mode == 'play'){
+      setState(() {
+        _emoExpression = 'neutral';
+      });
+      speakQuestion();
+    }
+    else{
+      setState(() {
+        _emoExpression = 'neutral';
+      });
+      bool available = await _speech.initialize(
+        onStatus: (status) => print('onStatus: $status'),
+        onError: (error) => _handleSpeechError(error),
       );
-    } else {
-      setState(() => _isListening = false);
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          onResult: (result) {
+            if (result.finalResult) {
+              if (result.recognizedWords.isEmpty) {
+                _sayRandomDialogue();
+              } else {
+                _sendQuestion(result.recognizedWords);
+              }
+              setState(() => _isListening = false);
+            }
+          },
+          listenFor: const Duration(seconds: 10),
+          pauseFor: const Duration(seconds: 5),
+          onSoundLevelChange: (level) => print('Sound level: $level'),
+          cancelOnError: true,
+          partialResults: false,
+        );
+      } else {
+        setState(() => _isListening = false);
+      }
     }
   }
 
@@ -210,7 +218,7 @@ class _VoiceAssistantUIState extends State<VoiceAssistantUI> {
       try {
         final response = await http.post(
           
-          Uri.parse('https://hakirmubarmaj.pythonanywhere.com/ask_question'),
+          Uri.parse('http://192.168.0.107:5000/ask_question'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'question': question}),
         );
@@ -240,7 +248,7 @@ class _VoiceAssistantUIState extends State<VoiceAssistantUI> {
       try {
         final response = await http.post(
           
-          Uri.parse('https://hakirmubarmaj.pythonanywhere.com/ask_question'),
+          Uri.parse('http://192.168.0.107:5000/voice_assistant'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'question': question}),
         );
@@ -270,7 +278,7 @@ class _VoiceAssistantUIState extends State<VoiceAssistantUI> {
       try {
         final response = await http.post(
           
-          Uri.parse('https://hakirmubarmaj.pythonanywhere.com/ask_question'),
+          Uri.parse('http://192.168.0.107:5000/voice_assistant'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({'question': question}),
         );
@@ -354,56 +362,80 @@ class _VoiceAssistantUIState extends State<VoiceAssistantUI> {
     await _flutterTts.speak(text);
   }
 
-  // Future<void> speakQuestion() async {
-  //   if (_isPlaying) {
-  //     // Fetch the question from the API
-  //     var questionResponse = await http.get(Uri.parse('https://hakirmubarmaj.pythonanywhere.com/ask'));
-  //     if (questionResponse.statusCode == 200) {
-  //       var questionData = jsonDecode(questionResponse.body);
-  //       _currentQuestion = questionData['question'];
-        
-  //       // Speak the question out loud
-  //       await _flutterTts.speak(_currentQuestion);
+  Future<void> speakQuestion() async {
+    if (widget.mode == 'play') {
+      // Fetch the question from the API
+      var questionResponse = await http.get(Uri.parse('http://192.168.0.107:5000/ask'));
+      if (questionResponse.statusCode == 200) {
+        var questionData = jsonDecode(questionResponse.body);
+        _currentQuestion = questionData['question'];
+        setState(() {
+          _emoExpression = 'speaking';
+        });
+        // Speak the question out loud
+        await _flutterTts.speak(_currentQuestion);
 
-  //       // Start listening for the user's answer
-  //       _listenForAnswer();
-  //     }
-  //   }
-  // }
+        // Start listening for the user's answer
+        _listenForAnswer();
+      }
+    }
+    else{
+      setState(() {
+        _emoExpression = 'neutral';
+      });
+      _startListening();
+    }
+  }
 
-  // void _listenForAnswer() async {
-  //   if (_isPlaying) {
-  //     _speech.stop();
-  //     await _speech.listen(onResult: _onAnswerResult);
-  //   }
-  // }
+  void _listenForAnswer() async {
+    setState(() {
+      _emoExpression = 'listening';
+    });
+    if (widget.mode == 'play') {
+      _speech.stop();
+      await _speech.listen(onResult: (result) {
+          if (result.finalResult) {
+            if (result.recognizedWords.isEmpty) {
+              _sayRandomDialogue();
+            } else {
+              _onAnswerResult(result.recognizedWords);
+            }
+            setState(() => _isListening = false);
+          }
+        },);
+    }
+  }
 
-  // void _onAnswerResult(stt.SpeechRecognitionResult result) async {
-  //   String userAnswer = result.recognizedWords;
+  void _onAnswerResult(String userAnswer) async {
+    setState(() {
+      _emoExpression = 'listening';
+    });
+    if (widget.mode == 'play') {
+      // Send the answer to the API for validation
+      var answerResponse = await http.post(
+        Uri.parse('http://192.168.0.107:5000/answer'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'question': _currentQuestion,
+          'answer': userAnswer,
+        }),
+      );
 
-  //   if (_isPlaying) {
-  //     // Send the answer to the API for validation
-  //     var answerResponse = await http.post(
-  //       Uri.parse('https://hakirmubarmaj.pythonanywhere.com/answer'),
-  //       headers: {'Content-Type': 'application/json'},
-  //       body: jsonEncode({
-  //         'question': _currentQuestion,
-  //         'answer': userAnswer,
-  //       }),
-  //     );
+      if (answerResponse.statusCode == 200) {
+        var answerData = jsonDecode(answerResponse.body);
+        String reply = answerData['result'];
+        setState(() {
+          _emoExpression = 'speaking';
+        });
 
-  //     if (answerResponse.statusCode == 200) {
-  //       var answerData = jsonDecode(answerResponse.body);
-  //       String reply = answerData['result'];
+        // Speak the reply out loud
+        await _speak(reply);
 
-  //       // Speak the reply out loud
-  //       await _flutterTts.speak(reply);
-
-  //       // Continue with the next question
-  //       speakQuestion();
-  //     }
-  //   }
-  // }
+        // Continue with the next question
+        speakQuestion();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
